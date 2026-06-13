@@ -1,0 +1,50 @@
+@startuml NimbusVault_Context
+' ============================================================
+'  NimbusVault — C4 Level 1 (System Context Diagram)
+'  ТЗ: показать систему как единый чёрный ящик и её связи
+'  с пользователями и внешними системами.
+'  Внутренние контейнеры (MinIO, Postgres, observability-стек)
+'  на этом уровне НЕ раскрываются — это уровень Container (L2).
+' ============================================================
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title System Context — NimbusVault (self-service объектное хранилище)
+
+' ----- Акторы (люди) ------------------------------------------------
+Person(endUser, "Пользователь хранилища", "Создаёт своё хранилище, задаёт структуру папок, загружает и скачивает файлы через UI или API.")
+Person(operator, "Оператор платформы", "Разворачивает и обновляет инфраструктуру NimbusVault, следит за состоянием системы.")
+
+' ----- Рассматриваемая система --------------------------------------
+System(nimbusVault, "NimbusVault", "Self-service provisioning хранилищ данных с мультитенантностью на общих backing-сервисах: объектное хранилище (MinIO), в перспективе — NoSQL БД. Создаёт бакеты/БД, IAM-политики и service accounts/учётные данные на тенанта, выдаёт presigned URL / connection strings, отдаёт UI и REST API.")
+
+' ----- Внешние системы ----------------------------------------------
+System_Ext(keycloak, "Keycloak", "Identity Provider. Хранит пользователей, realms/clients/roles, выдаёт и проверяет OIDC-токены (SSO).")
+System_Ext(komodo, "Komodo", "Оркестратор деплоя. Разворачивает и обновляет инфраструктурный стек NimbusVault (сам сервис, MinIO, Postgres, observability). НЕ участвует в рантайм-провижининге тенантов.")
+System_Ext(observability, "Observability-стек", "Grafana + Prometheus / Loki / Tempo(Zipkin) + Alloy. Сбор метрик, логов и трейсов NimbusVault и инфраструктуры.")
+
+' ----- Связи --------------------------------------------------------
+Rel(endUser, keycloak, "Логинится (SSO)", "OIDC / HTTPS")
+Rel(endUser, nimbusVault, "Управляет своим хранилищем, грузит/качает файлы", "HTTPS (UI и REST API)")
+Rel(operator, komodo, "Запускает деплой/обновление инфраструктуры", "HTTPS (Komodo UI / API)")
+Rel(operator, nimbusVault, "Администрирует, наблюдает состояние", "HTTPS")
+
+Rel(nimbusVault, keycloak, "Проверяет JWT / получает данные пользователя", "OIDC")
+Rel(komodo, nimbusVault, "Деплоит и обновляет инфраструктурный стек", "REST API (только; без SSH / docker socket)")
+Rel(nimbusVault, observability, "Экспортирует метрики, логи, трейсы", "OTLP / Prometheus scrape")
+Rel(operator, observability, "Смотрит дашборды и алерты", "HTTPS (Grafana)")
+
+' ----- Замечания для читателя диаграммы -----------------------------
+note right of nimbusVault
+  Внутри (раскрывается на уровне Container):
+  Spring Boot backend, общий MinIO,
+  статический reverse-proxy.
+  Изоляция тенантов — логическая
+  (IAM policy на бакеты).
+  В перспективе — аналогично shared
+  NoSQL БД с мультитенантностью
+  на уровне БД/пользователя.
+end note
+
+SHOW_LEGEND()
+@enduml
